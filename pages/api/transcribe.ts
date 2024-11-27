@@ -70,22 +70,45 @@ export default async function handler(
 
     // Access the uploaded file
     const filePath = (req).file?.path;
-
-    // Transcribe audio using OpenAI Whisper
-    const transcriptionResponse = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(filePath),
-      model: "whisper-1"
+    const stats = fs.statSync(filePath);
+    if (stats.size > 25 * 1024 * 1024) { // 25MB limit
+      return res.status(400).json({ error: "File exceeds the 25MB size limit." });
     }
-    );
 
-    const transcriptionText = transcriptionResponse.text;
+    // Retry logic for OpenAI API
+    const retry = async (fn: () => Promise<any>, retries = 3): Promise<any> => {
+      try {
+        return await fn();
+      } catch (error) {
+        if (retries <= 1) throw error;
+        console.warn("Retrying API request...");
+        return retry(fn, retries - 1);
+      }
+    };
+
+    //  // Transcribe audio using OpenAI Whisper
+    //  console.log("Sending transcription request...");
+    //  const transcriptionResponse = await retry(() =>
+    //    openai.audio.transcriptions.create({
+    //      file: fs.createReadStream(filePath),
+    //      model: "whisper-1",
+    //    }), 2
+    //  );
+
+    // // // Transcribe audio using OpenAI Whisper
+    // // const transcriptionResponse = await openai.audio.transcriptions.create({
+    // //   file: fs.createReadStream(filePath),
+    // //   model: "whisper-1",
+    // // });
+
+    // const transcriptionText = transcriptionResponse.text;
 
     // Generate job post using GPT-4
     const completionResponse = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4o-mini",
       messages: [
         { role: "system", content: "Generate a job post from user input." },
-        { role: "user", content: transcriptionText },
+        { role: "user", content: 'just do a random one. ' },
       ],
     });
 
