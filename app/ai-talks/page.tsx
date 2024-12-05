@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 const SpeechRecognition =
   typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
 
+
 const synth = typeof window !== 'undefined' && window.speechSynthesis;
 
 export default function JobPostAssistant() {
@@ -53,8 +54,8 @@ export default function JobPostAssistant() {
         .join('');
       setUserInput(transcript);
     };
-
-    recognition.onerror = (event) => {
+// eslint-disable-next-line
+    recognition.onerror = (event: any) => {
       console.error('Speech recognition error:', event.error);
     };
 
@@ -118,6 +119,7 @@ export default function JobPostAssistant() {
         />
         <div className="flex gap-4">
           <Button
+          disabled={loading}
             onMouseDown={handleSpeechRecognition}
             onMouseUp={handleSpeechRecognition}
             className={`flex-1 ${isListening ? 'bg-red-500' : 'bg-green-500'}`}

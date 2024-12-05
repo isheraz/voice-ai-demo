@@ -1,15 +1,16 @@
 import { NextApiRequest, NextApiResponse } from "next";
-import StreamPot from "@streampot/client";
+// import StreamPot from "@streampot/client";
 import multer from "multer";
 import OpenAI from 'openai';
 import path from "path";
 import fs from "fs";
+import { Transcription } from "openai/resources/audio/transcriptions.mjs";
 
 
 // Initialize StreamPot client
-const streampot = new StreamPot({
-  secret: process.env.STREAMPOT_API_KEY || "", // Ensure this is set in your .env.local
-});
+// const streampot = new StreamPot({
+//   secret: process.env.STREAMPOT_API_KEY || "", // Ensure this is set in your .env.local
+// });
 
 // TypeScript types
 type TranscriptionResponse = {
@@ -73,7 +74,7 @@ const multerMiddleware = (
   res: NextApiResponse,
   next: (err?: Error | null) => void
 ) => {
-  upload.single("audio")(req as any, res as any, (err: Error | null) => {
+  upload.single("audio")(req, res, (err: Error | null) => {
     if (err) {
       res.status(500).json({ error: "File upload failed" });
       return;
@@ -102,7 +103,7 @@ const runMiddleware = (
 
 
 // Retry logic for OpenAI API
-const retry = async (fn: () => Promise<any>, retries = 3): Promise<any> => {
+const retry = async (fn: () => Promise<unknown>, retries = 3): Promise<Transcription> => {
   try {
     return await fn();
   } catch (error) {
@@ -117,21 +118,21 @@ const retry = async (fn: () => Promise<any>, retries = 3): Promise<any> => {
 /**
  * Function to convert audio using StreamPot
  */
-const convertToWavWithStreamPot = async (inputPath: string): Promise<string> => {
-  console.log("Uploading audio to StreamPot...");
-  const response = await streampot
-    .input(inputPath) // Input the local file path
-    .setStartTime(0) // Optional: Adjust the start time
-    .output("converted.wav") // Desired output file name
-    .runAndWait();
+// const convertToWavWithStreamPot = async (inputPath: string): Promise<string> => {
+//   console.log("Uploading audio to StreamPot...");
+//   const response = await streampot
+//     .input(inputPath) // Input the local file path
+//     .setStartTime(0) // Optional: Adjust the start time
+//     .output("converted.wav") // Desired output file name
+//     .runAndWait();
 
-  const outputUrl = response.outputs["converted.wav"];
-  if (!outputUrl) {
-    throw new Error("Failed to convert audio with StreamPot.");
-  }
-  console.log("Audio converted. Output URL:", outputUrl);
-  return outputUrl;
-};
+//   const outputUrl = response.outputs["converted.wav"];
+//   if (!outputUrl) {
+//     throw new Error("Failed to convert audio with StreamPot.");
+//   }
+//   console.log("Audio converted. Output URL:", outputUrl);
+//   return outputUrl;
+// };
 
 /**
  * Main handler function
@@ -149,6 +150,7 @@ export default async function handler(
     // Run the multer middleware to handle file upload
     await runMiddleware(req, res, multerMiddleware);
 
+    // eslint-disable-next-line
     const file = (req as any).file;
     if (!file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -168,7 +170,7 @@ export default async function handler(
     //   model: "whisper-1",
     // });
 
-    const transcriptionResponse = await retry(() =>
+    const transcriptionResponse:Transcription = await retry(() =>
       openai.audio.transcriptions.create({
         file: fs.createReadStream(filePath),
         model: "whisper-1",
