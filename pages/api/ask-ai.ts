@@ -19,36 +19,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     try {
-        const messages: OpenAI.ChatCompletionMessageParam[] = [
-            {
-                role: "system",
-                content: "You are a friendly assistant helping users create job posts step by step.",
-            },
-        ];
+        // const messages: OpenAI.ChatCompletionMessageParam[] = [
+        //     {
+        //         role: "system",
+        //         content: "You are a friendly assistant helping users create job posts step by step.",
+        //     },
+        // ];
 
-        if (userName) {
-            messages.push({
-                role: "user",
-                content: `My name is ${userName}.`,
-            });
-        }
+        // if (userName) {
+        //     messages.push({
+        //         role: "user",
+        //         content: `My name is ${userName}.`,
+        //     });
+        // }
 
-        messages.push({
-            role: "user",
-            content: userInput,
-        });
+        // messages.push({
+        //     role: "user",
+        //     content: userInput,
+        // });
+        // @ts-expect-error testing 
         const completionResponse = await openai.chat.completions.create({
-            // model: "gpt-4o",
-            model: "o1-mini",
-            messages
-            //   messages: [
-            //     {
-            //       role: 'system',
-            //       content: 'You are a friendly assistant helping users create job posts step by step.',
-            //     },
-            //     ...(userName ? [{ role: 'user', content: `My name is ${userName}.` }] : []),
-            //     { role: 'user', content: userInput },
-            //   ],
+            model: "gpt-4o",
+            // model: "o1-mini",
+            // messages
+            messages: [
+                {
+                    role: 'system',
+                    content: 'You are a friendly assistant helping users create job posts step by step.',
+                },
+                ...(userName ? [{ role: 'user', content: `My name is ${userName}.` }] : []),
+                { role: 'user', content: userInput },
+            ],
         });
 
         const message = completionResponse.choices[0]?.message?.content || 'I could not understand your request.';

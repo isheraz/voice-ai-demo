@@ -189,8 +189,8 @@ export default async function handler(
 
     console.log("Generating job post...");
     const completionResponse = await openai.chat.completions.create({
-      // model: "gpt-4o",
-      model: "o1-mini",
+      model: "gpt-4o",
+      // model: "o1-mini",
       messages: [
         { role: "system", content: "Generate a job post from user input." },
         { role: "user", content: transcriptionText },
