@@ -38,7 +38,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             content: userInput,
         });
         const completionResponse = await openai.chat.completions.create({
-            model: "gpt-4o",
+            // model: "gpt-4o",
+            model: "o1-mini",
             messages
             //   messages: [
             //     {
