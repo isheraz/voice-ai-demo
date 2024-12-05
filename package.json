@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.0",
+    "@streampot/client": "^0.0.18",
     "@tanstack/react-query": "^5.61.5",
     "axios": "^1.7.8",
     "class-variance-authority": "^0.7.1",

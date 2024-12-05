@@ -1,17 +1,17 @@
 import { NextApiRequest, NextApiResponse } from "next";
-import OpenAI from "openai";
+import StreamPot from "@streampot/client";
 import multer from "multer";
+import OpenAI from 'openai';
+import path from "path";
 import fs from "fs";
 
-// Initialize multer for handling file uploads
-const upload = multer({ dest: "/tmp" });
-// Initialize OpenAI configuration
-const configuration = {
-  apiKey: process.env.OPENAI_API_KEY || "",
-};
-const openai = new OpenAI(configuration);
 
-// TypeScript types for request and response
+// Initialize StreamPot client
+const streampot = new StreamPot({
+  secret: process.env.STREAMPOT_API_KEY || "", // Ensure this is set in your .env.local
+});
+
+// TypeScript types
 type TranscriptionResponse = {
   jobPost: string;
 };
@@ -20,95 +20,177 @@ type ErrorResponse = {
   error: string;
 };
 
+// Disable Next.js default bodyParser to handle multipart/form-data
 export const config = {
   api: {
-    bodyParser: false, // Disable Next.js default bodyParser to handle multipart/form-data
+    bodyParser: false,
   },
 };
 
 /**
- * Custom middleware to handle Multer file uploads
- * Adapts Multer to work with Next.js
+ * Multer middleware to handle file uploads in Next.js
  */
-const multerMiddleware = (req: NextApiRequest, res: NextApiResponse,   next: (err?: Error | null) => void) => {
-  upload.single("audio")(req, res, (err) => {
-    if (err) {
-      return res.status(500).json({ error: "File upload failed" });
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "/tmp"); // Directory to store files
+  },
+  filename: (req, file, cb) => {
+    // Use the original file name with its extension
+    const ext = path.extname(file.originalname); // Extract extension
+    const name = path.basename(file.originalname, ext); // Extract name without extension
+    cb(null, `${name}-${Date.now()}${ext}`); // Append a timestamp to the file name
+  },
+});
+
+// Initialize multer with custom storage
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    const allowedMimeTypes = [
+      "audio/flac",
+      "audio/m4a",
+      "audio/mp3",
+      "audio/mp4",
+      "audio/mpeg",
+      "audio/mpga",
+      "audio/oga",
+      "audio/ogg",
+      "audio/wav",
+      "audio/webm",
+    ];
+    if (allowedMimeTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Unsupported file format"));
     }
-    next();
+  },
+});
+
+// const upload = multer({ dest: "/tmp" });
+const multerMiddleware = (
+  req: NextApiRequest,
+  res: NextApiResponse,
+  next: (err?: Error | null) => void
+) => {
+  upload.single("audio")(req as any, res as any, (err: Error | null) => {
+    if (err) {
+      res.status(500).json({ error: "File upload failed" });
+      return;
+    }
+    next(err);
   });
 };
 
-// Promisify the middleware
+/**
+ * Promisify middleware for easier integration with async/await
+ */
 const runMiddleware = (
-  req: NextApiRequest, 
-  res: NextApiResponse, 
+  req: NextApiRequest,
+  res: NextApiResponse,
   fn: (req: NextApiRequest, res: NextApiResponse, next: (err?: unknown) => void) => void
-) =>
-  new Promise((resolve, reject) => {
+): Promise<void> => {
+  return new Promise((resolve, reject) => {
     fn(req, res, (result: unknown) => {
       if (result instanceof Error) {
         return reject(result);
       }
-      resolve(result);
+      resolve();
     });
   });
+};
 
+
+// Retry logic for OpenAI API
+const retry = async (fn: () => Promise<any>, retries = 3): Promise<any> => {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries <= 1) throw error;
+    console.warn("Retrying API request...");
+    return retry(fn, retries - 1);
+  }
+};
+
+    //  // Transcribe audio using OpenAI Whisper
+
+/**
+ * Function to convert audio using StreamPot
+ */
+const convertToWavWithStreamPot = async (inputPath: string): Promise<string> => {
+  console.log("Uploading audio to StreamPot...");
+  const response = await streampot
+    .input(inputPath) // Input the local file path
+    .setStartTime(0) // Optional: Adjust the start time
+    .output("converted.wav") // Desired output file name
+    .runAndWait();
+
+  const outputUrl = response.outputs["converted.wav"];
+  if (!outputUrl) {
+    throw new Error("Failed to convert audio with StreamPot.");
+  }
+  console.log("Audio converted. Output URL:", outputUrl);
+  return outputUrl;
+};
+
+/**
+ * Main handler function
+ */
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<TranscriptionResponse | ErrorResponse>
 ): Promise<void> {
-  console.log("testing API")
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method Not Allowed" });
     return;
   }
 
   try {
-    // Run the multer middleware to handle the file upload
+    // Run the multer middleware to handle file upload
     await runMiddleware(req, res, multerMiddleware);
 
-    // Access the uploaded file
-    const filePath = (req).file?.path;
-    const stats = fs.statSync(filePath);
-    if (stats.size > 25 * 1024 * 1024) { // 25MB limit
-      return res.status(400).json({ error: "File exceeds the 25MB size limit." });
+    const file = (req as any).file;
+    if (!file) {
+      return res.status(400).json({ error: "No file uploaded" });
     }
 
-    // Retry logic for OpenAI API
-    const retry = async (fn: () => Promise<any>, retries = 3): Promise<any> => {
-      try {
-        return await fn();
-      } catch (error) {
-        if (retries <= 1) throw error;
-        console.warn("Retrying API request...");
-        return retry(fn, retries - 1);
-      }
-    };
+    const filePath = file.path;
 
-    //  // Transcribe audio using OpenAI Whisper
-    //  console.log("Sending transcription request...");
-    //  const transcriptionResponse = await retry(() =>
-    //    openai.audio.transcriptions.create({
-    //      file: fs.createReadStream(filePath),
-    //      model: "whisper-1",
-    //    }), 2
-    //  );
+    console.log("Converting audio...");
+    // const convertedAudioUrl = await convertToWavWithStreamPot(filePath);
 
-    // // // Transcribe audio using OpenAI Whisper
-    // // const transcriptionResponse = await openai.audio.transcriptions.create({
-    // //   file: fs.createReadStream(filePath),
-    // //   model: "whisper-1",
-    // // });
+    console.log("Sending transcription request...");
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY || "",
+    });
+    // const transcriptionResponse = await openai.audio.transcriptions.create({
+    //   file: convertedAudioUrl,
+    //   model: "whisper-1",
+    // });
 
-    // const transcriptionText = transcriptionResponse.text;
+    const transcriptionResponse = await retry(() =>
+      openai.audio.transcriptions.create({
+        file: fs.createReadStream(filePath),
+        model: "whisper-1",
+      }), 2
+    );
 
-    // Generate job post using GPT-4
+    // Transcribe audio using OpenAI Whisper
+    // const transcriptionResponse = await openai.audio.transcriptions.create({
+    //   file: fs.createReadStream(filePath),
+    //   model: "whisper-1",
+    // });
+
+
+    const transcriptionText = transcriptionResponse.text;
+    console.log("🚀 ~ transcriptionText:", transcriptionText)
+
+    console.log("Generating job post...");
     const completionResponse = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       messages: [
         { role: "system", content: "Generate a job post from user input." },
-        { role: "user", content: 'just do a random one. ' },
+        { role: "user", content: transcriptionText },
       ],
     });
 
@@ -118,7 +200,6 @@ export default async function handler(
       throw new Error("No content generated from GPT-4.");
     }
 
-    // Send job post as response
     res.status(200).json({ jobPost });
   } catch (error) {
     console.error("Error processing transcription:", error);
